@@ -166,16 +166,25 @@ def get_best_child(node):
     most_visited_children = max(node.children, key=lambda c: c.visits)
     return most_visited_children
 
-def get_tour(node):
+def get_tour(node, cities_instance):
     tour = node.state.copy()
+    unvisited_cities = set(cities_instance.cities) - set(tour)
     while node.children:
         node = get_best_child(node)
-        if node.state[-1] not in tour:
-            tour.append(node.state[-1])
+        city = node.state[-1]
+        if city not in tour:
+            tour.append(city)
+            unvisited_cities.discard(city)
+    current_city = tour[-1]
+    while unvisited_cities:
+        next_city = min(unvisited_cities, key=lambda city: cities_instance.distance_matrix[(current_city, city)])
+        tour.append(next_city)
+        unvisited_cities.discard(next_city)
+        current_city = next_city
     return tour
 
 def main():
-    N = 10
+    N = 100
     seed = 42
 
     cities_instance = Cities(N=N, seed=seed)
@@ -195,13 +204,15 @@ def main():
 
     root = Node(initial_state, unvisited_cities)
 
-    iterations = 1000
+    iterations = 20000
     mcts(root, iterations, cities_instance)
-    best_tour = get_tour(root)
+    best_tour = get_tour(root, cities_instance)
     best_distance = cities_instance.calculate_total_distance(best_tour)
 
+    print(len(best_tour))
     print(f"Total Distance - MCTS: {best_distance:.2f}")
 
     cities_instance.plot_tour(best_tour, filename='mcts_best_tour.png')
+
 if __name__ == "__main__":
     main()
