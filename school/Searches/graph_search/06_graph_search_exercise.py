@@ -376,14 +376,13 @@ class EatDonutsProblem(SearchProblem):
     def target_positions(self, state: EatDonutsState):
         """Return the positions of the donuts if there are any left,
         otherwise return the positions of the doors"""
-        
-        return self.donut_positions if len(self.donut_positions) != 0 else self.door_positions
+        return state.donuts if state.donuts else self.door_positions
         #NOTE
         # Idea: If there are donuts left, then those are the targets.
         #       Otherwise, it's the door(s)
 
     def is_goal_state(self, state: EatDonutsState) -> bool:
-        return state.position in self.door_positions and len(self.donut_positions) == 0
+        return state.position in self.door_positions and not state.donuts
         #NOTE
         # Idea: If all the donuts are eaten, and we're at the door
 
@@ -397,7 +396,10 @@ class EatDonutsProblem(SearchProblem):
                 and 0 <= new_position.col < self.n
                 and not self.walls[new_position.row][new_position.col]
             ):
-                ns.add(EatDonutsState(new_position, self.donut_positions))
+                remaining_donuts = tuple(
+                    donut for donut in state.donuts if donut != new_position
+                )
+                ns.add(EatDonutsState(new_position, remaining_donuts))
         return ns 
         #NOTE
         # Idea: Very similar to next_states in CatToDoorProblem, but
