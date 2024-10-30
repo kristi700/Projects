@@ -2,6 +2,16 @@ import random
 import math
 import matplotlib.pyplot as plt
 
+from graphviz import Digraph
+
+
+# MCTS hyper params - not the cleanest, yet works great for testing so
+INITIAL_C = 40.0
+FINAL_C = 5.0
+ITERATIONS = 15000
+
+DECAY_RATE = (INITIAL_C - FINAL_C) / ITERATIONS
+
 class Cities:
     def __init__(self, N, seed=42, x_range=(0, 20), y_range=(0, 20)):
         """
@@ -82,6 +92,9 @@ class Cities:
 ### MCTS
 
 class Node():
+
+    node_id_counter = 0
+
     def __init__(self, state, unvisited_cities, parent=None):
         self.state = state # List of visited cities
         self.unvisited_cities = unvisited_cities
@@ -92,8 +105,12 @@ class Node():
         self.total_reward = 0.0
         self.is_fully_expanded = False
 
+        # for viz purposes
+        self.node_id = Node.node_id_counter
+        Node.node_id_counter += 1
+
 # funcs
-def select(node):
+def select(node, iteration):
     """
     In case node is not a terminal state, either expands it (in case it is not fully expanded), or returns its best child.
     """
@@ -101,8 +118,13 @@ def select(node):
         if not node.is_fully_expanded:
             return expand(node)
         else:
-            node = best_child(node, C = math.sqrt(2)) # C being the constant in UCB1
+            node = best_child(node, C = get_C(iteration)) # C being the constant in UCB1
     return node
+
+
+
+def get_C(iteration):
+    return max(FINAL_C, INITIAL_C - DECAY_RATE * iteration)
 
 
 def expand(node):
@@ -129,9 +151,12 @@ def best_child(node, C):
     """
     choice_weights = []
     for child in node.children:
-        exploitation = child.total_reward / (child.visits+1e-10)
-        exploration = C * math.sqrt(2*math.log(node.visits)/(child.visits+1e-10))
-        choice_weights.append(exploitation + exploration)
+        if child.visits == 0:
+            choice_weights.append(float('inf'))
+        else:
+            exploitation = child.total_reward / child.visits
+            exploration = C * math.sqrt(2*math.log(node.visits)/child.visits)
+            choice_weights.append(exploitation + exploration)
     max_weight = max(choice_weights)
     # Needed as more can have same weights
     best_children = [child for child, weight in zip(node.children, choice_weights) if weight == max_weight]
@@ -157,8 +182,8 @@ def backpropagate(node, reward):
         node = node.parent
 
 def mcts(root, iterations, cities_instance):
-    for _ in range(iterations):
-        leaf = select(root)
+    for iteration in range(iterations):
+        leaf = select(root, iteration)
         reward = simulate(leaf, cities_instance)
         backpropagate(leaf, reward)
 
@@ -176,15 +201,31 @@ def get_tour(node, cities_instance):
             tour.append(city)
             unvisited_cities.discard(city)
     current_city = tour[-1]
+
     while unvisited_cities:
+        print(f"Greedy choice due to unexplored parts")
         next_city = min(unvisited_cities, key=lambda city: cities_instance.distance_matrix[(current_city, city)])
         tour.append(next_city)
         unvisited_cities.discard(next_city)
         current_city = next_city
     return tour
 
+def vizualize_tree(node, graph, max_depth=3, current_depth=0, min_visits=1):
+    if current_depth > max_depth:
+        return
+    if node.visits < min_visits:
+        return
+
+    node_label = f"ID:{node.node_id}\nVisits:{node.visits}"
+    graph.node(str(node.node_id), label=node_label)
+    if node.parent is not None:
+        graph.edge(str(node.parent.node_id), str(node.node_id))
+    for child in node.children:
+        vizualize_tree(child, graph, max_depth, current_depth + 1, min_visits)
+ 
+
 def main():
-    N = 100
+    N = 30
     seed = 42
 
     cities_instance = Cities(N=N, seed=seed)
@@ -204,15 +245,19 @@ def main():
 
     root = Node(initial_state, unvisited_cities)
 
-    iterations = 20000
-    mcts(root, iterations, cities_instance)
+    mcts(root, ITERATIONS, cities_instance)
     best_tour = get_tour(root, cities_instance)
     best_distance = cities_instance.calculate_total_distance(best_tour)
 
-    print(len(best_tour))
+    print(f"iters: {ITERATIONS}")
     print(f"Total Distance - MCTS: {best_distance:.2f}")
 
     cities_instance.plot_tour(best_tour, filename='mcts_best_tour.png')
+
+    graph = Digraph(comment='MCTS', format='png')
+    vizualize_tree(root, graph, max_depth=3, min_visits=5)
+    graph.render('mcts', view=False)
+
 
 if __name__ == "__main__":
     main()
