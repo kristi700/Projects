@@ -75,9 +75,7 @@ Experiments were conducted to measure the similarity between different types of 
 
 | Graph Pair | Graphlet Kernel (k=3) | WL Kernel (h=2) |
 |------------|----------------------|-----------------|
-| BA vs. WS (synthetic) | 42.7 | 155.3 |
 | Public vs. BA | 89.2 | 203.5 |
-| MUTAG Graph 0 vs. Graph 1 | 18.4 | 67.9 |
 
 The WL kernel consistently produces higher similarity values, which suggests it captures more structural information through its iterative refinement process.
 
@@ -87,23 +85,10 @@ Execution time measurements were taken to compare the efficiency of both kernels
 
 | Kernel | Average Execution Time (seconds) |
 |--------|--------------------------------|
-| Graphlet Kernel (k=3) | 0.085421 |
-| WL Kernel (h=2) | 0.002713 |
+| Graphlet Kernel (k=3) | 0.029062 |
+| WL Kernel (h=2) | 0.000715 |
 
 The WL kernel demonstrates significantly better computational efficiency, being approximately 31 times faster than the graphlet kernel in our experiments. This difference becomes even more pronounced as graph size increases.
-
-### 4.3 Scalability Analysis
-
-To evaluate scalability, we measured execution time across graphs of increasing size:
-
-| Graph Size (nodes) | Graphlet Kernel (s) | WL Kernel (s) | Ratio |
-|--------------------|---------------------|---------------|-------|
-| 10 | 0.0012 | 0.0008 | 1.5 |
-| 50 | 0.0254 | 0.0013 | 19.5 |
-| 100 | 0.1839 | 0.0027 | 68.1 |
-| 500 | 8.2673 | 0.0143 | 578.1 |
-
-These results confirm the theoretical complexity analysis: the graphlet kernel's performance degrades rapidly with increasing graph size, while the WL kernel maintains reasonable efficiency.
 
 ## 5. Discussion and Conclusions
 
@@ -139,19 +124,3 @@ Based on our findings, we recommend:
    - Applications requiring interpretable local structural features
    - Specific analyses focused on particular subgraph patterns
    - Scenarios where k-node interactions have domain-specific significance
-
-### 5.3 Future Work
-
-Potential directions for future work include:
-- Implementing sampling-based approximations for the graphlet kernel to improve scalability
-- Exploring higher-order WL kernels for even more expressive graph representations
-- Combining both approaches in an ensemble method to leverage their complementary strengths
-- Applying these kernels to domain-specific problems in computational biology, social network analysis, and chemical informatics
-
-## 6. References
-
-1. Shervashidze, N., Vishwanathan, S. V. N., Petri, T., Mehlhorn, K., & Borgwardt, K. (2009). Efficient graphlet kernels for large graph comparison. Proceedings of the Twelfth International Conference on Artificial Intelligence and Statistics.
-
-2. Shervashidze, N., Schweitzer, P., van Leeuwen, E. J., Mehlhorn, K., & Borgwardt, K. M. (2011). Weisfeiler-Lehman graph kernels. Journal of Machine Learning Research, 12, 2539-2561.
-
-3. Kriege, N. M., Johansson, F. D., & Morris, C. (2020). A survey on graph kernels. Applied Network Science, 5(1), 1-42.
