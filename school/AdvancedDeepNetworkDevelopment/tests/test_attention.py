@@ -1,7 +1,7 @@
 import torch
 import pytest
 
-from transformer_core.attention import ScaledDotProductAttention
+from transformer_core.attention import ScaledDotProductAttention, MultiHeadedAttention
 
 def test_scaled_dot_product_attention_output_shape():
     """
@@ -95,4 +95,73 @@ def test_scaled_dot_product_attention_batching():
     assert torch.allclose(output_batch, output_concat, atol=1e-6), \
         "Batch processing differs from individual processing."
     
+# MHA TESTS
 
+D_MODEL = 64
+NUM_HEADS = 8
+SEQ_LEN_Q = 10
+SEQ_LEN_K = 12
+BATCH_SIZE = 4
+
+D_K = D_MODEL // NUM_HEADS
+D_V = D_MODEL // NUM_HEADS
+
+@pytest.fixture
+def mha_model():
+    """Provides an instance of the MultiHeadedAttention module."""
+    return MultiHeadedAttention(d_model=D_MODEL, num_heads=NUM_HEADS, d_k=D_K, d_v=D_V)
+
+@pytest.fixture
+def sample_data():
+    """Provides sample Q, K, V tensors."""
+    query = torch.randn(BATCH_SIZE, SEQ_LEN_Q, D_MODEL)
+    key = torch.randn(BATCH_SIZE, SEQ_LEN_K, D_MODEL)
+    value = torch.randn(BATCH_SIZE, SEQ_LEN_K, D_MODEL)
+    return query, key, value
+
+@pytest.fixture
+def sample_data_self_attn():
+    """Provides sample Q, K, V tensors for self-attention (same seq_len)."""
+    seq_len = 10
+    query = torch.randn(BATCH_SIZE, seq_len, D_MODEL)
+    key = torch.randn(BATCH_SIZE, seq_len, D_MODEL)
+    value = torch.randn(BATCH_SIZE, seq_len, D_MODEL)
+    return query, key, value
+
+def test_mha_output_shape_no_mask(mha_model, sample_data):
+    """
+    Tests the output shape of MHA without any mask.
+    """
+    query, key, value = sample_data
+    output = mha_model(query, key, value, mask=None)
+
+    assert output.shape == (BATCH_SIZE, SEQ_LEN_Q, D_MODEL), f"Expected shape {(BATCH_SIZE, SEQ_LEN_Q, D_MODEL)}, but got {output.shape}"
+    assert output.dtype == query.dtype, "Output dtype should match input dtype"
+
+def test_mha_output_shape_with_padding_mask(mha_model, sample_data):
+    """
+    Tests the output shape of MHA with a padding mask.
+    """
+    query, key, value = sample_data
+    padding_mask = torch.ones(BATCH_SIZE, SEQ_LEN_K, dtype=torch.bool)
+    padding_mask[0, -2:] = 0
+    padding_mask[2, -4:] = 0
+
+    output = mha_model(query, key, value, mask=padding_mask)
+
+    assert output.shape == (BATCH_SIZE, SEQ_LEN_Q, D_MODEL), f"Expected shape {(BATCH_SIZE, SEQ_LEN_Q, D_MODEL)}, but got {output.shape}"
+    assert output.dtype == query.dtype, "Output dtype should match input dtype"
+
+def test_mha_output_shape_with_lookahead_mask(mha_model, sample_data_self_attn):
+    """
+    Tests the output shape of MHA with a look-ahead mask (requires seq_len_q == seq_len_k).
+    """
+    query, key, value = sample_data_self_attn
+    seq_len = query.size(1)
+
+    look_ahead_mask = torch.triu(torch.ones(seq_len, seq_len, dtype=torch.bool), diagonal=1)
+    look_ahead_mask = ~look_ahead_mask
+    output = mha_model(query, key, value, mask=look_ahead_mask)
+
+    assert output.shape == (BATCH_SIZE, seq_len, D_MODEL), f"Expected shape {(BATCH_SIZE, seq_len, D_MODEL)}, but got {output.shape}"
+    assert output.dtype == query.dtype, "Output dtype should match input dtype"
