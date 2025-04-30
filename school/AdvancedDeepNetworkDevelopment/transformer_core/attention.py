@@ -26,22 +26,20 @@ class MultiHeadedAttention(nn.Module):
     """
     Vanilla MultiHeadedAttention module.
     """
-    def __init__(self, d_model: int, num_heads: int, d_k: int, d_v: int):
+    def __init__(self, d_model: int, num_heads: int):
         """
         Args:
             - d_model: input embeddings dimensionality
             - num_heads: number of heads for the attention
-            - d_k: query and key dimension
-            - d_v: value dimension
         Output:
             - context matrix after paralell attentions applied
         """
         super().__init__()
 
-        assert d_k == d_v == d_model / num_heads, f"d_model({d_model}) must be cleanly divisible by num_heads({num_heads})!"
+        assert d_model % num_heads == 0, f"d_model({d_model}) must be cleanly divisible by num_heads({num_heads})!"
         self.d_model = d_model
-        self.d_k = d_k
-        self.d_v = d_v
+        self.d_k = d_model // num_heads
+        self.d_v = d_model // num_heads # d_k = d_v this way
         self.num_heads = num_heads
 
         # Weight matricies for linear projection

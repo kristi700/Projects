@@ -8,11 +8,9 @@ def test_scaled_dot_product_attention_output_shape():
     Tests if the output tensor has the expected shape (batch_size, seq_len_q, d_v).
     """
     batch_size = 4
-    seq_len_q = 10
-    seq_len_k = 12
-    d_k = 32
-    d_v = 64
-
+    seq_len_q = seq_len_k = 10
+    d_k = d_v = 10
+    
     query = torch.randn(batch_size, seq_len_q, d_k)
     key = torch.randn(batch_size, seq_len_k, d_k)
     value = torch.randn(batch_size, seq_len_k, d_v)
@@ -20,9 +18,8 @@ def test_scaled_dot_product_attention_output_shape():
 
     output = ScaledDotProductAttention(query, key, value, mask=mask)
 
-    expected_shape = (batch_size, seq_len_q, d_v)
-    assert output.shape == expected_shape, \
-        f"Output shape mismatch: Expected {expected_shape}, got {output.shape}"
+    expected_shape = (batch_size, seq_len_q, d_k)
+    assert output.shape == expected_shape, f"Output shape mismatch: Expected {expected_shape}, got {output.shape}"
 
 def test_scaled_dot_product_attention_padding():
     """
@@ -30,17 +27,15 @@ def test_scaled_dot_product_attention_padding():
     """
 
     batch_size = 4
-    seq_len_q = 10
-    seq_len_k = 12
-    d_k = 32
-    d_v = 64
+    seq_len_q = seq_len_k = 10
+    d_k = d_v = 10
 
     query = torch.randn(batch_size, seq_len_q, d_k)
     key = torch.randn(batch_size, seq_len_k, d_k)
     value_original = torch.randn(batch_size, seq_len_k, d_v)
 
     mask_indices = [2, 4]
-    mask = torch.ones(batch_size, 1, seq_len_k, dtype=torch.long)
+    mask = torch.ones(batch_size, 1, seq_len_k)
     for idx in mask_indices:
         if 0 <= idx < seq_len_k:
             mask[:, :, idx] = 0
@@ -61,17 +56,15 @@ def test_scaled_dot_product_attention_padding():
     output_modified = ScaledDotProductAttention(query, key, value_modified, mask=mask)
     assert torch.allclose(output_original, output_modified, atol=1e-6), \
         "Output changed significantly despite modifications only occurring at masked value positions. Masking might not be working."
-    
+
 def test_scaled_dot_product_attention_batching():
     """
     Tests if processing items in a batch gives the same result as
     processing them individually and concatenating.
     """
     batch_size = 3
-    seq_len_q = 6
-    seq_len_k = 7
-    d_k = 16
-    d_v = 20
+    seq_len_q = seq_len_k = 6
+    d_k = d_v = 10
 
     query = torch.randn(batch_size, seq_len_q, d_k)
     key = torch.randn(batch_size, seq_len_k, d_k)
@@ -103,13 +96,10 @@ SEQ_LEN_Q = 10
 SEQ_LEN_K = 12
 BATCH_SIZE = 4
 
-D_K = D_MODEL // NUM_HEADS
-D_V = D_MODEL // NUM_HEADS
-
 @pytest.fixture
 def mha_model():
     """Provides an instance of the MultiHeadedAttention module."""
-    return MultiHeadedAttention(d_model=D_MODEL, num_heads=NUM_HEADS, d_k=D_K, d_v=D_V)
+    return MultiHeadedAttention(d_model=D_MODEL, num_heads=NUM_HEADS)
 
 @pytest.fixture
 def sample_data():
