@@ -64,20 +64,27 @@ class MultiHeadedAttention(nn.Module):
             - context matrix after attention applied (batch_size, seq_len_q, d_model)
         """
         batch_size = query.shape[0]
+        seq_len_q = query.shape[1]
+        seq_len_k = key.shape[1]
 
         q_proj = self.w_query(query)
         k_proj = self.w_key(key)
         v_proj = self.w_value(value)
 
-        q_heads = q_proj.view(batch_size, query.shape[1], self.num_heads, self.d_k).transpose(1, 2)
-        k_heads = k_proj.view(batch_size, key.shape[1], self.num_heads, self.d_k).transpose(1, 2)
-        v_heads = v_proj.view(batch_size, value.shape[1], self.num_heads, self.d_v).transpose(1, 2)
+        q_heads = q_proj.view(batch_size, seq_len_q, self.num_heads, self.d_k).transpose(1, 2)
+        k_heads = k_proj.view(batch_size, seq_len_k, self.num_heads, self.d_k).transpose(1, 2)
+        v_heads = v_proj.view(batch_size, seq_len_k, self.num_heads, self.d_v).transpose(1, 2)
 
         if mask is not None:
-            if mask.dim() == 3:
+            if mask.dim() == 3: # (batch_size, seq_len_q, seq_len_k) to (batch_size, 1, seq_len_q, seq_len_k)
                 mask = mask.unsqueeze(1)
             elif mask.dim() == 2:
-                mask = mask.unsqueeze(1).unsqueeze(1)
+                if mask.shape == (batch_size, seq_len_k):
+                    mask = mask.unsqueeze(1).unsqueeze(2) # (B, 1, 1, Sk)
+                elif mask.shape == (seq_len_q, seq_len_k): #
+                    mask = mask.unsqueeze(0).unsqueeze(0) # (1, 1, Sq, Sk)
+                else:
+                    raise ValueError(f"Unsupported mask shape: {mask.shape}")
 
         context = ScaledDotProductAttention(q_heads, k_heads, v_heads, mask=mask)
         context = context.transpose(1, 2).contiguous().view(batch_size, query.shape[1], self.d_model)
