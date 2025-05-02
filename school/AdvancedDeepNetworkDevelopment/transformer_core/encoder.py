@@ -13,7 +13,7 @@ class EncoderBlock(nn.Module):
     """
     def __init__(self, d_model: int = 512, num_heads: int = 8):
         super().__init__()
-        self.mha = MultiHeadedAttention(d_model, num_heads)
+        self.self_attention = MultiHeadedAttention(d_model, num_heads)
         self.feed_forward = FeedForwardBlock(d_model)
 
         # Separate LayerNorms as elementwise=True
@@ -24,7 +24,7 @@ class EncoderBlock(nn.Module):
         """
         TODO
         """
-        attn_output = self.mha(query=x, key=x, value=x, mask=mask)
+        attn_output = self.self_attention(query=x, key=x, value=x, mask=mask)
         x = self.layer_norm1(attn_output + x)
         ff_output = self.feed_forward(x)
         x=self.layer_norm2(ff_output+x)
