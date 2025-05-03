@@ -1,7 +1,30 @@
-dataset_name: Cora
-split_ratios:
-  train: 0.8
-  val:   0.1
-  test:  0.1
-seed: 42
+data:
+  dataset_name: Cora
+  split_ratios:
+    train: 0.8
+    val:   0.1
+    test:  0.1
+  seed: 42
+  
 task: link_prediction
+
+model:
+  in_channels: -1
+  hidden_channels: 128  
+  num_layers: 2         
+  dropout_rate: 0.5     
+  use_skip_connection: True 
+  use_layer_norm: True    
+  use_bias: True        
+  eps_trainable: True   
+  use_input_norm: False 
+
+training:
+  optimizer: Adam       
+  learning_rate: 0.01
+  weight_decay: 0.0005  
+  epochs: 200
+  device: auto          
+
+evaluation:
+  metrics: ['auc', 'accuracy']
