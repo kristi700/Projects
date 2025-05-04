@@ -8,6 +8,11 @@ data:
   
 task: link_prediction
 
+loader:
+  batch_size: 512
+  num_neighbors: [10, 5]
+  neg_sampling_ratio: 1.0
+
 model:
   in_channels: -1
   hidden_channels: 128  
@@ -21,7 +26,7 @@ model:
 
 training:
   optimizer: Adam       
-  learning_rate: 0.01
+  learning_rate: 0.00001
   weight_decay: 0.0005  
   epochs: 200
   device: auto          
