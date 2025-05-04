@@ -1,13 +1,136 @@
 import yaml
 import torch
 import numpy as np
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import os
 from torch_geometric.loader import LinkNeighborLoader
 from sklearn.metrics import roc_auc_score
 import traceback
 from torch_geometric.data import Data
+from collections import defaultdict
 
 from models import EdgeGNN
 from data_utils import load_dataset, perform_split, seed_everything
+
+
+def plot_results(results, epochs, save_dir="plots"):
+    """Generates and saves plots for training history and test results."""
+    print(f"\n--- Generating Plots (saving to '{save_dir}') ---")
+    os.makedirs(save_dir, exist_ok=True)
+
+    split_names = list(results.keys())
+    if not split_names:
+        print("No results available to plot.")
+        return
+
+    plt.figure(figsize=(10, 6))
+    for name in split_names:
+        if "history" in results[name] and not results[name].get("error"):
+            history = results[name]["history"]
+            epochs_ran = history.get(
+                "epoch", list(range(1, len(history["train_loss"]) + 1))
+            )
+            plt.plot(
+                epochs_ran,
+                history["train_loss"],
+                label=f"{name.capitalize()} Train Loss",
+            )
+            plt.plot(
+                epochs_ran,
+                history["val_loss"],
+                label=f"{name.capitalize()} Val Loss",
+                linestyle="--",
+            )
+        else:
+            print(f"Skipping loss plot for {name} due to missing history or error.")
+
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.title("Training & Validation Loss Curves")
+    plt.yscale("log")
+    plt.legend()
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "loss_curves.png"))
+    plt.close()
+    print("Saved loss_curves.png")
+
+    plot_auc = False
+    plt.figure(figsize=(10, 6))
+    for name in split_names:
+        if (
+            "history" in results[name]
+            and "val_auc" in results[name]["history"]
+            and not results[name].get("error")
+        ):
+            history = results[name]["history"]
+
+            valid_auc_indices = [
+                i for i, auc in enumerate(history["val_auc"]) if not np.isnan(auc)
+            ]
+            if valid_auc_indices:
+                epochs_ran = [
+                    history.get("epoch", list(range(1, len(history["val_auc"]) + 1)))[i]
+                    for i in valid_auc_indices
+                ]
+                valid_auc = [history["val_auc"][i] for i in valid_auc_indices]
+                plt.plot(epochs_ran, valid_auc, label=f"{name.capitalize()} Val AUC")
+                plot_auc = True
+            else:
+                print(f"No valid Val AUC data to plot for {name}.")
+
+    if plot_auc:
+        plt.xlabel("Epochs")
+        plt.ylabel("AUC")
+        plt.title("Validation AUC Curve")
+        plt.ylim(bottom=max(0.0, plt.ylim()[0]))
+        plt.legend()
+        plt.grid(True, linestyle="--", linewidth=0.5)
+        plt.tight_layout()
+        plt.savefig(os.path.join(save_dir, "validation_auc_curve.png"))
+        print("Saved validation_auc_curve.png")
+    else:
+        print("Skipping validation AUC plot (no valid data).")
+    plt.close()
+
+    valid_test_results = {
+        k: v["test"] for k, v in results.items() if "test" in v and not v.get("error")
+    }
+    if not valid_test_results:
+        print("No valid test results available for bar chart.")
+        return
+
+    metrics_to_plot = sorted(list(next(iter(valid_test_results.values())).keys()))
+    num_metrics = len(metrics_to_plot)
+    num_splits = len(valid_test_results)
+    bar_width = 0.35
+    index = np.arange(num_metrics)
+
+    fig, ax = plt.subplots(figsize=(max(6, num_metrics * 1.5), 6))
+
+    bar_positions = {}
+    split_list = sorted(list(valid_test_results.keys()))
+
+    for i, name in enumerate(split_list):
+        test_res = valid_test_results[name]
+        values = [test_res.get(metric, 0) for metric in metrics_to_plot]
+        pos = index + i * bar_width - (bar_width * (num_splits - 1) / 2)
+        bar_positions[name] = pos
+        rects = ax.bar(pos, values, bar_width, label=name.capitalize())
+
+    ax.set_ylabel("Score")
+    ax.set_title("Final Test Performance Comparison")
+    ax.set_xticks(index)
+    ax.set_xticklabels([m.capitalize() for m in metrics_to_plot])
+    ax.legend()
+    ax.grid(True, axis="y", linestyle="--", linewidth=0.5)
+    fig.tight_layout()
+    plt.savefig(os.path.join(save_dir, "test_results_comparison.png"))
+    plt.close()
+    print("Saved test_results_comparison.png")
 
 
 def get_optimizer(model: torch.nn.Module, config: dict) -> torch.optim.Optimizer:
@@ -16,8 +139,8 @@ def get_optimizer(model: torch.nn.Module, config: dict) -> torch.optim.Optimizer
     lr = config.get("learning_rate", 0.01)
     weight_decay = config.get("weight_decay", 0.0)
 
-    if optimizer_name.lower() == "adam":
-        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    if optimizer_name.lower() == "adamw":
+        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     elif optimizer_name.lower() == "sgd":
         return torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
     else:
@@ -151,22 +274,21 @@ def run_training(
     task_type,
 ):
     """
-    Runs the training loop, including validation, adapting to split strategy.
+    Runs the training loop, including validation.
+    Returns the trained model AND a history dictionary.
     """
     print(f"\n--- Training ({split_name.capitalize()}) ---")
+    history = defaultdict(list)
+
     for epoch in range(1, epochs + 1):
         model.train()
         optimizer.zero_grad()
-
         node_emb = model(train_ds.x, train_ds.edge_index)
 
         if (
             not hasattr(train_ds, "edge_label_index")
             or train_ds.edge_label_index is None
         ):
-            print(
-                "Warning: train_ds.edge_label_index not found. Using train_ds.edge_index for positive supervision."
-            )
             train_pred_idx = train_ds.edge_index
             train_target = torch.ones(train_pred_idx.size(1), device=device)
         else:
@@ -190,7 +312,12 @@ def run_training(
             task_type,
         )
         val_loss = val_metrics["loss"]
-        val_auc = val_metrics.get("auc", 0.0)
+        val_auc = val_metrics.get("auc", float("nan"))
+
+        history["epoch"].append(epoch)
+        history["train_loss"].append(train_loss.item())
+        history["val_loss"].append(val_loss)
+        history["val_auc"].append(val_auc)
 
         if epoch == 1 or epoch % 10 == 0 or epoch == epochs:
             print(
@@ -200,7 +327,7 @@ def run_training(
                 f"Val AUC: {val_auc:.4f}"
             )
 
-    return model
+    return model, history
 
 
 def run_test(
@@ -308,6 +435,7 @@ if __name__ == "__main__":
 
         print("Initializing model, optimizer, criterion...")
         seed_everything(seed)
+        train_history = None
         model = EdgeGNN(
             in_channels=actual_in_channels,
             hidden_channels=model_cfg["hidden_channels"],
@@ -324,7 +452,7 @@ if __name__ == "__main__":
         criterion = get_criterion(cfg["task"])
         epochs = train_cfg.get("epochs", 100)
 
-        model = run_training(
+        model, train_history = run_training(
             model,
             optimizer,
             criterion,
@@ -338,6 +466,8 @@ if __name__ == "__main__":
             cfg["task"],
         )
 
+        results[split_name] = {"history": dict(train_history)}
+
         test_results = run_test(
             model,
             criterion,
@@ -349,38 +479,42 @@ if __name__ == "__main__":
             DEVICE,
             cfg["task"],
         )
-        results[split_name] = test_results
+        results[split_name]["test"] = test_results
 
-    print("\n===== FINAL RESULTS SUMMARY =====")
-    if "transductive" in results and "inductive" in results:
-        valid_results = {k: v for k, v in results.items() if "error" not in v}
+    print("\n===== FINAL RESULTS SUMMARY TABLE =====")
+    valid_test_results = {
+        k: v["test"]
+        for k, v in results.items()
+        if "test" in v and not v.get("error")
+    }
 
-        if not valid_results:
-            print("No valid results found for comparison.")
-        else:
-            print(f"{'Metric':<15} | {'Transductive':<15} | {'Inductive':<15}")
-            print("-" * 50)
-
-            ref_metrics = next(iter(valid_results.values())).keys()
-            all_metrics = set(ref_metrics)
-
-            if "transductive" in valid_results and "inductive" in valid_results:
-                all_metrics |= set(valid_results["transductive"].keys()) | set(
-                    valid_results["inductive"].keys()
-                )
-
-            for metric in sorted(list(all_metrics)):
-                td_val = results.get("transductive", {}).get(metric, float("nan"))
-                ind_val = results.get("inductive", {}).get(metric, float("nan"))
-                td_err = "error" in results.get("transductive", {})
-                ind_err = "error" in results.get("inductive", {})
-
-                td_str = "ERROR" if td_err else f"{td_val:<15.4f}"
-                ind_str = "ERROR" if ind_err else f"{ind_val:<15.4f}"
-
-                print(f"{metric.capitalize():<15} | {td_str:<15} | {ind_str:<15}")
+    if not valid_test_results:
+        print("No valid test results found for summary table.")
     else:
-        print("Could not find results for both splits to compare.")
-        print("Results:", results)
+        print(f"{'Metric':<15} | {'Transductive':<15} | {'Inductive':<15}")
+        print("-" * 50)
+
+        all_metrics = set()
+        if "transductive" in valid_test_results:
+            all_metrics.update(valid_test_results["transductive"].keys())
+        if "inductive" in valid_test_results:
+            all_metrics.update(valid_test_results["inductive"].keys())
+
+        for metric in sorted(list(all_metrics)):
+            td_val = (
+                results.get("transductive", {})
+                .get("test", {})
+                .get(metric, float("nan"))
+            )
+            ind_val = (
+                results.get("inductive", {})
+                .get("test", {})
+                .get(metric, float("nan"))
+            )
+            td_err = "error" in results.get("transductive", {})
+            ind_err = "error" in results.get("inductive", {})
+            td_str = "ERROR" if td_err else f"{td_val:<15.4f}"
+            ind_str = "ERROR" if ind_err else f"{ind_val:<15.4f}"
+            print(f"{metric.capitalize():<15} | {td_str:<15} | {ind_str:<15}")
 
     print("\n--- Execution Finished ---")

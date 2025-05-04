@@ -9,13 +9,13 @@ data:
 task: link_prediction
 
 loader:
-  batch_size: 512
-  num_neighbors: [10, 5]
+  batch_size: 256
+  num_neighbors: [5, 5]
   neg_sampling_ratio: 1.0
 
 model:
   in_channels: -1
-  hidden_channels: 128  
+  hidden_channels: 32
   num_layers: 2         
   dropout_rate: 0.5     
   use_skip_connection: True 
@@ -25,9 +25,9 @@ model:
   use_input_norm: False 
 
 training:
-  optimizer: Adam       
-  learning_rate: 0.00001
-  weight_decay: 0.0005  
+  optimizer: adamw       
+  learning_rate: 0.0001
+  weight_decay: 0.00005
   epochs: 200
   device: auto          
 
