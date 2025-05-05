@@ -1,0 +1,46 @@
+vanilla_vit/
+├── vit_core/                  
+│   ├── __init__.py
+│   ├── attention.py           
+│   ├── encoder_block.py       
+│   ├── feed_forward.py        
+│   ├── mlp_head.py            
+│   ├── patch_embedding.py     
+│   ├── positional_embedding.py
+│   └── vit.py                 
+│
+├── data/                      
+│   ├── __init__.py
+│   ├── datasets.py            
+│   └── transforms.py          
+│
+├── configs/                   
+│   └── default_vit_config.yaml 
+│
+├── scripts/                   
+│   ├── __init__.py
+│   ├── train.py               
+│   └── evaluate.py            
+│
+├── tests/                     
+│   ├── __init__.py
+│   ├── test_attention.py      
+│   ├── test_encoder_block.py
+│   ├── test_feed_forward.py  
+│   ├── test_mlp_head.py
+│   ├── test_patch_embedding.py
+│   └── test_vit.py            
+│   └── test_positional_embedding.py
+│
+├── utils/                    
+│   ├── __init__.py
+│   ├── config_parser.py       
+│   ├── logging_utils.py
+│   └── training_utils.py     
+│
+├── checkpoints/               
+│
+├── runs/                      
+│
+├── README.md                 
+└── requirements.txt 
