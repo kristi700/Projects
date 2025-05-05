@@ -1,0 +1,31 @@
+import os
+import cv2
+import torch
+import pandas as pd
+import torch.nn.functional as F
+from torch.utils.data import Dataset
+
+class CIFAR10Dataset(Dataset):
+
+    def __init__(self, csv_file, root_dir, transform=None):
+        self.data = pd.read_csv(csv_file)
+        self.root_dir = root_dir
+        self.transform = transform
+
+        self.classes = sorted(self.data.iloc[:, 1].unique().tolist())
+        self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
+
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        img_name = os.path.join(self.root_dir, str(self.data.iloc[idx, 0]))
+        image = cv2.imread(f"{img_name}.png")
+        label = self.data.iloc[idx, 1]
+        label_idx = self.class_to_idx[label]
+        label = F.one_hot(torch.tensor(label_idx), num_classes=len(self.classes))
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image, label
