@@ -1,5 +1,5 @@
 checkpoints/*
-/cifar-10
+/training_data
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

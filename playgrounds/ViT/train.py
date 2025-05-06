@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 
 from tqdm import tqdm
 from datetime import datetime
-from data.datasets import CIFAR10Dataset
+from data.datasets import CIFAR10Dataset, STL10Dataset
 from torch.utils.data import DataLoader, random_split, Subset
 
 from vit_core.vit import ViT
@@ -19,7 +19,7 @@ def setup_device():
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train ViT Model')
-    parser.add_argument('--config', type=str, default='configs/basic.yaml',
+    parser.add_argument('--config', type=str, default='configs/stl10.yaml',
                         help='Path to configuration file')
     args = parser.parse_args()
     return args
@@ -30,6 +30,10 @@ def get_transforms(config):
     train_transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Resize((img_size, img_size)),
+        transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(0.4, 0.4, 0.4, 0.1),
+        transforms.RandomRotation(15),
     ])
     val_transform = transforms.Compose([
         transforms.ToTensor(),
@@ -39,12 +43,21 @@ def get_transforms(config):
     return train_transform, val_transform
 
 def prepare_dataloaders(config, train_transform, val_transform):
-    full_dataset_train_transforms = CIFAR10Dataset(
-        config['data']['data_csv'], config['data']['data_dir'], transform=train_transform
-    )
-    full_dataset_val_transforms = CIFAR10Dataset(
-        config['data']['data_csv'], config['data']['data_dir'], transform=val_transform
-    )
+    # TODO - to separate func if more datasets
+    if config['data']['dataset_name'].lower() == 'cifar10':
+        full_dataset_train_transforms = CIFAR10Dataset(
+            config['data']['data_csv'], config['data']['data_dir'], transform=train_transform
+        )
+        full_dataset_val_transforms = CIFAR10Dataset(
+            config['data']['data_csv'], config['data']['data_dir'], transform=val_transform
+        )
+    elif config['data']['dataset_name'].lower() == 'stl10':
+        full_dataset_train_transforms = STL10Dataset(
+            config['data']['data_csv'], config['data']['data_dir'], transform=train_transform
+        )
+        full_dataset_val_transforms = STL10Dataset(
+            config['data']['data_csv'], config['data']['data_dir'], transform=val_transform
+        )
 
     total_size = len(full_dataset_train_transforms)
     val_size = int(total_size * config['data']['val_split'])
@@ -140,12 +153,12 @@ def main():
     train_loader, val_loader = prepare_dataloaders(config, train_transform, val_transform)
     model = build_model(config).to(device)
 
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config['training']['learning_rate'], weight_decay=config['training']['weight_decay'])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.05)
 
     best_val_acc = 0.0
-    save_path = os.path.join(config['training']['checkpoint_dir'], f"{datetime.now().strftime('%Y_%m_%d')}_{str(uuid.uuid4())}")
+    save_path = os.path.join(config['training']['checkpoint_dir'], str(datetime.now().strftime('%Y_%m_%d_%H_%M_%S')))
     for epoch in range(1, config['training']['num_epochs'] + 1):
         epoch_desc = f"Epoch {epoch}/{config['training']['num_epochs']}"
         train_loss, train_acc = train_one_epoch(

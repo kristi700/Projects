@@ -2,7 +2,6 @@ import os
 import cv2
 import torch
 import pandas as pd
-import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 class CIFAR10Dataset(Dataset):
@@ -21,6 +20,30 @@ class CIFAR10Dataset(Dataset):
     def __getitem__(self, idx):
         img_name = os.path.join(self.root_dir, str(self.data.iloc[idx, 0]))
         image = cv2.imread(f"{img_name}.png")
+        label = self.data.iloc[idx, 1]
+        label = torch.tensor(self.class_to_idx[label])
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image, label
+    
+class STL10Dataset(Dataset):
+
+    def __init__(self, json_file, root_dir, transform=None):
+        self.data = pd.read_json(json_file)
+        self.root_dir = root_dir
+        self.transform = transform
+
+        self.classes = sorted(self.data.iloc[:, 1].unique().tolist())
+        self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
+
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        img_name = os.path.join(self.root_dir, str(self.data.iloc[idx, 0]).split('/')[-1])
+        image = cv2.imread(img_name)
         label = self.data.iloc[idx, 1]
         label = torch.tensor(self.class_to_idx[label])
 
