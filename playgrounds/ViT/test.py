@@ -132,7 +132,6 @@ def visualize(
         interpolation="bilinear",
     )
 
-
     ax.text(
         0.5,
         0.95,

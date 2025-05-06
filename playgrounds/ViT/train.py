@@ -28,16 +28,14 @@ def get_transforms(config):
     img_size = config['data']['img_size']
 
     train_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Resize((img_size, img_size)),
-        transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0)),
+        transforms.RandomResizedCrop(img_size, scale=(0.9, 1.0)),
         transforms.RandomHorizontalFlip(),
-        transforms.ColorJitter(0.4, 0.4, 0.4, 0.1),
         transforms.RandomRotation(15),
+        transforms.ToTensor(),
     ])
     val_transform = transforms.Compose([
-        transforms.ToTensor(),
         transforms.Resize((img_size, img_size)),
+        transforms.ToTensor(),
     ])
     print("Transforms defined.")
     return train_transform, val_transform
@@ -74,14 +72,14 @@ def prepare_dataloaders(config, train_transform, val_transform):
         train_dataset,
         batch_size=config['training']['batch_size'],
         shuffle=True,
-        num_workers=config.get('num_workers', 0),
+        num_workers=config['data']['num_workers'],
         pin_memory=True
     )
     val_loader = DataLoader(
         val_dataset,
-        batch_size=config.get('val_batch_size', config['training']['batch_size'] * 2),
+        batch_size=config['training']['batch_size'],
         shuffle=False,
-        num_workers=config.get('num_workers', 0),
+        num_workers=config['data']['num_workers'],
         pin_memory=True
     )
     return train_loader, val_loader
@@ -100,12 +98,11 @@ def build_model(config):
     )
     return model
 
-def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch_desc="Training"):
+def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch_desc="Training", scheduler=None, warmup_scheduler=None, current_epoch=None, warmup_epochs=0):
     model.train()
     running_loss = 0
     correct = 0
     total = 0
-
     pbar = tqdm(dataloader, desc=epoch_desc, leave=False)
     for inputs, labels in pbar:
         inputs, labels = inputs.to(device), labels.to(device)
@@ -116,10 +113,13 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch_desc=
         loss.backward()
         optimizer.step()
 
+        if warmup_scheduler is not None and current_epoch <= warmup_epochs:
+             warmup_scheduler.step()
+
         running_loss += loss.item() * inputs.size(0)
         correct += (preds.argmax(1) == labels).sum().item()
         total += labels.size(0)
-        pbar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{correct/total:.3f}")
+        pbar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{correct/total:.3f}", lr=f"{optimizer.param_groups[0]['lr']:.1e}")
 
     avg_loss = running_loss / total
     acc = correct / total
@@ -144,6 +144,25 @@ def evaluate(model, dataloader, criterion, device):
     acc = correct / total
     return avg_loss, acc
 
+class LinearWarmupScheduler:
+    def __init__(self, optimizer, warmup_steps, target_lr, start_lr):
+        self.optimizer = optimizer
+        self._step = 0
+        self.warmup_steps = max(1, warmup_steps)
+        self.target_lr = target_lr
+        self.start_lr = start_lr
+        self.lr_steps = [
+            (target_lr - start_lr) / self.warmup_steps
+            for _ in optimizer.param_groups
+        ]
+
+    def step(self):
+        self._step += 1
+        if self._step <= self.warmup_steps:
+            lr_scale = float(self._step) / self.warmup_steps
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = self.start_lr + lr_scale * (self.target_lr - self.start_lr)
+
 def main():
     args = parse_args()
     config = load_config(args.config)
@@ -153,19 +172,43 @@ def main():
     train_loader, val_loader = prepare_dataloaders(config, train_transform, val_transform)
     model = build_model(config).to(device)
 
+    warmup_initial_lr = float(config['training']['warmup_initial_learning_rate'])
     criterion = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config['training']['learning_rate'], weight_decay=config['training']['weight_decay'])
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.05)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=warmup_initial_lr, weight_decay=config['training']['weight_decay'])
+
+    num_epochs = config['training']['num_epochs']
+    warmup_epochs = config['training']['warmup_epochs']
+    warmup_steps = warmup_epochs * len(train_loader)
+
+    main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=num_epochs - warmup_epochs,
+        eta_min=float(config['training']['lr_final'])
+    )
+
+    warmup_scheduler = LinearWarmupScheduler(
+        optimizer,
+        warmup_steps=warmup_steps,
+        target_lr=float(config['training']['warmup_final_learning_rate']),
+        start_lr = warmup_initial_lr
+    )
 
     best_val_acc = 0.0
     save_path = os.path.join(config['training']['checkpoint_dir'], str(datetime.now().strftime('%Y_%m_%d_%H_%M_%S')))
     for epoch in range(1, config['training']['num_epochs'] + 1):
         epoch_desc = f"Epoch {epoch}/{config['training']['num_epochs']}"
         train_loss, train_acc = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, epoch_desc
+            model, train_loader, criterion, optimizer, device, epoch_desc,
+            scheduler=main_scheduler,
+            warmup_scheduler=warmup_scheduler,
+            current_epoch=epoch,
+            warmup_epochs=warmup_epochs
         )
         val_loss, val_acc = evaluate(model, val_loader, criterion, device)
-        scheduler.step(val_loss)
+
+        if epoch > warmup_epochs:
+            main_scheduler.step()
+
         print(f"\nEpoch {epoch} Summary: "
               f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | "
               f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")

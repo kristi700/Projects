@@ -1,7 +1,8 @@
 import os
-import cv2
 import torch
 import pandas as pd
+
+from PIL import Image
 from torch.utils.data import Dataset
 
 class CIFAR10Dataset(Dataset):
@@ -19,7 +20,7 @@ class CIFAR10Dataset(Dataset):
     
     def __getitem__(self, idx):
         img_name = os.path.join(self.root_dir, str(self.data.iloc[idx, 0]))
-        image = cv2.imread(f"{img_name}.png")
+        image = Image.open(f"{img_name}.png")
         label = self.data.iloc[idx, 1]
         label = torch.tensor(self.class_to_idx[label])
 
@@ -43,7 +44,7 @@ class STL10Dataset(Dataset):
     
     def __getitem__(self, idx):
         img_name = os.path.join(self.root_dir, str(self.data.iloc[idx, 0]).split('/')[-1])
-        image = cv2.imread(img_name)
+        image = Image.open(img_name)
         label = self.data.iloc[idx, 1]
         label = torch.tensor(self.class_to_idx[label])
 
