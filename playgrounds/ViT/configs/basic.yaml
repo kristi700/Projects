@@ -1,0 +1,24 @@
+data:
+  data_csv: 'cifar-10/trainLabels.csv'
+  data_dir: 'cifar-10/train'
+  val_split: 0.2
+  num_workers: 4
+  img_size: 112
+
+model:
+  patch_size: 16
+  num_classes: 10 
+  in_channels: 3 
+  embed_dim: 512
+  num_blocks: 4
+  num_heads: 8
+  mlp_dim: 1024
+  dropout: 0.1
+
+training:
+  random_seed: 42
+  batch_size: 128
+  num_epochs: 10
+  learning_rate: 0.01
+  weight_decay: 0.0
+  checkpoint_dir: './checkpoints'

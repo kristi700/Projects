@@ -22,8 +22,7 @@ class CIFAR10Dataset(Dataset):
         img_name = os.path.join(self.root_dir, str(self.data.iloc[idx, 0]))
         image = cv2.imread(f"{img_name}.png")
         label = self.data.iloc[idx, 1]
-        label_idx = self.class_to_idx[label]
-        label = F.one_hot(torch.tensor(label_idx), num_classes=len(self.classes))
+        label = torch.tensor(self.class_to_idx[label])
 
         if self.transform:
             image = self.transform(image)

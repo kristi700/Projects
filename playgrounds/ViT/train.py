@@ -1,26 +1,176 @@
+import os
+import uuid
 import torch
+import argparse
 import torchvision.transforms as transforms
 
+from tqdm import tqdm
+from datetime import datetime
 from data.datasets import CIFAR10Dataset
 from torch.utils.data import DataLoader, random_split, Subset
 
-def main():
-    transform = transforms.Compose([
+from vit_core.vit import ViT
+from utils.config_parser import load_config
+
+def setup_device():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    return device
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train ViT Model')
+    parser.add_argument('--config', type=str, default='configs/basic.yaml',
+                        help='Path to configuration file')
+    args = parser.parse_args()
+    return args
+
+def get_transforms(config):
+    img_size = config['data']['img_size']
+
+    train_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Resize(112),
+        transforms.Resize((img_size, img_size)),
     ])
+    val_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Resize((img_size, img_size)),
+    ])
+    print("Transforms defined.")
+    return train_transform, val_transform
 
-    cifar_dataset = CIFAR10Dataset('cifar-10/trainLabels.csv', 'cifar-10/train', transform=transform)
+def prepare_dataloaders(config, train_transform, val_transform):
+    full_dataset_train_transforms = CIFAR10Dataset(
+        config['data']['data_csv'], config['data']['data_dir'], transform=train_transform
+    )
+    full_dataset_val_transforms = CIFAR10Dataset(
+        config['data']['data_csv'], config['data']['data_dir'], transform=val_transform
+    )
 
-    total_size = len(cifar_dataset)
-    val_size = int(total_size * 0.2)
+    total_size = len(full_dataset_train_transforms)
+    val_size = int(total_size * config['data']['val_split'])
     train_size = total_size - val_size
 
-    train_data, val_data = random_split(cifar_dataset,[train_size, val_size])
+    generator = torch.Generator().manual_seed(config['training']['random_seed'])
+    train_subset_indices, val_subset_indices = random_split(
+        range(total_size), [train_size, val_size], generator=generator)
 
-    train_data_loader = DataLoader(train_data, 128)
-    val_data_loader = DataLoader(val_data, 128)
+    train_dataset = Subset(full_dataset_train_transforms, train_subset_indices.indices)
+    val_dataset = Subset(full_dataset_val_transforms, val_subset_indices.indices)
 
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=config['training']['batch_size'],
+        shuffle=True,
+        num_workers=config.get('num_workers', 0),
+        pin_memory=True
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=config.get('val_batch_size', config['training']['batch_size'] * 2),
+        shuffle=False,
+        num_workers=config.get('num_workers', 0),
+        pin_memory=True
+    )
+    return train_loader, val_loader
+
+def build_model(config):
+    image_shape = (config['model']['in_channels'], config['data']['img_size'], config['data']['img_size'])
+    model = ViT(
+        input_shape=image_shape,
+        patch_size=config['model']['patch_size'],
+        num_classes=config['model']['num_classes'],
+        embed_dim=config['model']['embed_dim'],
+        num_blocks=config['model']['num_blocks'],
+        num_heads=config['model']['num_heads'],
+        mlp_dim=config['model']['mlp_dim'],
+        dropout=config['model']['dropout'],
+    )
+    return model
+
+def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch_desc="Training"):
+    model.train()
+    running_loss = 0
+    correct = 0
+    total = 0
+
+    pbar = tqdm(dataloader, desc=epoch_desc, leave=False)
+    for inputs, labels in pbar:
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+        preds = model(inputs)
+        loss = criterion(preds, labels)
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item() * inputs.size(0)
+        correct += (preds.argmax(1) == labels).sum().item()
+        total += labels.size(0)
+        pbar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{correct/total:.3f}")
+
+    avg_loss = running_loss / total
+    acc = correct / total
+    return avg_loss, acc
+
+def evaluate(model, dataloader, criterion, device):
+    model.eval()
+    total_loss = 0
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for inputs, labels in tqdm(dataloader, desc="Validation"):
+            inputs, labels = inputs.to(device), labels.to(device)
+            preds = model(inputs)
+            loss = criterion(preds, labels)
+            total_loss += loss.item() * inputs.size(0)
+            correct += (preds.argmax(1) == labels).sum().item()
+            total += labels.size(0)
+
+    avg_loss = total_loss / total
+    acc = correct / total
+    return avg_loss, acc
+
+def main():
+    args = parse_args()
+    config = load_config(args.config)
+    device = setup_device()
+    
+    train_transform, val_transform = get_transforms(config)
+    train_loader, val_loader = prepare_dataloaders(config, train_transform, val_transform)
+    model = build_model(config).to(device)
+
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.05)
+
+    best_val_acc = 0.0
+    save_path = os.path.join(config['training']['checkpoint_dir'], f"{datetime.now().strftime('%Y_%m_%d')}_{str(uuid.uuid4())}", 'best_vit_model.pth')
+    for epoch in range(1, config['training']['num_epochs'] + 1):
+        epoch_desc = f"Epoch {epoch}/{config['training']['num_epochs']}"
+        train_loss, train_acc = train_one_epoch(
+            model, train_loader, criterion, optimizer, device, epoch_desc
+        )
+        val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+        scheduler.step(val_loss)
+        print(f"\nEpoch {epoch} Summary: "
+              f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | "
+              f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+        
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            print(f"✨ New best validation accuracy: {best_val_acc:.4f}. Saving model...")
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_val_acc': best_val_acc,
+                'config': config
+            }
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            torch.save(checkpoint, save_path)
+
+    print("Training finished.")
 
 if __name__ == "__main__":
     main()
