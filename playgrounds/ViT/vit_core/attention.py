@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-def ScaledDotProductAttention(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
+def ScaledDotProductAttention(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, return_attn: bool = False) -> torch.Tensor:
     """Compute scaled dot-product attention
 
         Args:
@@ -15,7 +15,10 @@ def ScaledDotProductAttention(query: torch.Tensor, key: torch.Tensor, value: tor
     scaled_attention_score = attention_score / torch.sqrt(torch.tensor(query.shape[-1]))
     normalized_scores = torch.softmax(scaled_attention_score, dim=-1)
     context_matrix = torch.matmul(normalized_scores, value)
-    return context_matrix
+    if return_attn:
+        return context_matrix, normalized_scores
+    else:
+        return context_matrix, None
 
 class MultiHeadedAttention(nn.Module):
     """
@@ -44,7 +47,7 @@ class MultiHeadedAttention(nn.Module):
 
         self.final_linear = nn.Linear(d_model, d_model, bias=False)
 
-    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
+    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, return_attn: bool=False) -> torch.Tensor:
         """
         Compute multi-head attention.
 
@@ -68,8 +71,8 @@ class MultiHeadedAttention(nn.Module):
         k_heads = k_proj.view(batch_size, seq_len_k, self.num_heads, self.d_k).transpose(1, 2)
         v_heads = v_proj.view(batch_size, seq_len_k, self.num_heads, self.d_v).transpose(1, 2)
 
-        context = ScaledDotProductAttention(q_heads, k_heads, v_heads)
+        context, attn_probs = ScaledDotProductAttention(q_heads, k_heads, v_heads, return_attn)
         context = context.transpose(1, 2).contiguous().view(batch_size, query.shape[1], self.d_model)
 
         mha_context = self.final_linear(context)
-        return mha_context
+        return mha_context, attn_probs

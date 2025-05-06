@@ -168,7 +168,7 @@ def main():
                 'config': config
             }
             os.makedirs(save_path, exist_ok=True)
-            torch.save(checkpoint, os.path.join(save_path, f'{str(best_val_acc).split('.')[-1]}.pth'))
+            torch.save(checkpoint, os.path.join(save_path, 'best_model.pth'))
 
     print("Training finished.")
 

@@ -21,7 +21,7 @@ class EncoderBlock(nn.Module):
         self.drop1 = nn.Dropout(dropout)
         self.drop2 = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_attn=False) -> torch.Tensor:
         """
         Forward pass using Pre-LN.
         Args:
@@ -31,7 +31,7 @@ class EncoderBlock(nn.Module):
         """
         residual = x
         x = self.layer_norm1(x)
-        x = self.self_attention(query=x, key=x, value=x)
+        x, attn_probs = self.self_attention(query=x, key=x, value=x, return_attn=return_attn)
         x = self.drop1(x)
         x = x + residual
         
@@ -40,5 +40,4 @@ class EncoderBlock(nn.Module):
         x = self.feed_forward(x)
         x = self.drop2(x)
         x = x + residual 
-
-        return x
+        return x, attn_probs
