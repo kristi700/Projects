@@ -141,11 +141,11 @@ def main():
     model = build_model(config).to(device)
 
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config['training']['learning_rate'], weight_decay=config['training']['weight_decay'])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.05)
 
     best_val_acc = 0.0
-    save_path = os.path.join(config['training']['checkpoint_dir'], f"{datetime.now().strftime('%Y_%m_%d')}_{str(uuid.uuid4())}", 'best_vit_model.pth')
+    save_path = os.path.join(config['training']['checkpoint_dir'], f"{datetime.now().strftime('%Y_%m_%d')}_{str(uuid.uuid4())}")
     for epoch in range(1, config['training']['num_epochs'] + 1):
         epoch_desc = f"Epoch {epoch}/{config['training']['num_epochs']}"
         train_loss, train_acc = train_one_epoch(
@@ -167,8 +167,8 @@ def main():
                 'best_val_acc': best_val_acc,
                 'config': config
             }
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            torch.save(checkpoint, save_path)
+            os.makedirs(save_path, exist_ok=True)
+            torch.save(checkpoint, os.path.join(save_path, f'{str(best_val_acc).split('.')[-1]}.pth'))
 
     print("Training finished.")
 
