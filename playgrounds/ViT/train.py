@@ -28,9 +28,10 @@ def get_transforms(config):
     img_size = config['data']['img_size']
 
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(img_size, scale=(0.9, 1.0)),
+        transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0)),
         transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(15),
+        transforms.ColorJitter(0.4, 0.4, 0.4, 0.1),
+        transforms.RandomRotation(10),
         transforms.ToTensor(),
     ])
     val_transform = transforms.Compose([
